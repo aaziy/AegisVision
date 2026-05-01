@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Models — produced by export scripts
+models/*.mlpackage/
+models/*.onnx
+models/*.pt
+
+# Sample videos — fetched via scripts/fetch_sample.py
+data/samples/*
+!data/samples/.gitkeep
+
+# Runtime artifacts
+logs/*.jsonl
+results/*.json
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/

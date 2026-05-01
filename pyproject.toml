@@ -1,0 +1,21 @@
+[project]
+name = "aegisvision"
+version = "0.1.0"
+description = "Real-time edge computer vision for traffic monitoring (CoreML + ONNX)."
+readme = "README.md"
+authors = [
+    { name = "aaziy", email = "121827899+aaziy@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "coremltools>=9.0",
+    "numpy>=2.4.4",
+    "onnxruntime>=1.25.1",
+    "opencv-python>=4.13.0.92",
+    "ultralytics>=8.4.46",
+    "yt-dlp>=2026.3.17",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
