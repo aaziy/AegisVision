@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from aegisvision.detectors.base import Detection, VEHICLE_CLASS_IDS
+from aegisvision.detectors.onnx import OnnxDetector
 from aegisvision.detectors.pytorch import PyTorchDetector
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -54,12 +55,25 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     classes = None if args.all_classes else sorted(VEHICLE_CLASS_IDS)
-    detector = PyTorchDetector(
-        model=args.model,
-        conf=args.conf,
-        imgsz=args.imgsz,
-        classes=classes,
-    )
+    if args.backend == "pytorch":
+        detector = PyTorchDetector(
+            model=args.model,
+            conf=args.conf,
+            imgsz=args.imgsz,
+            classes=classes,
+        )
+    elif args.backend == "onnx":
+        detector = OnnxDetector(
+            model=args.model,
+            provider=args.provider,
+            compute_units=args.compute_units,
+            conf=args.conf,
+            classes=classes,
+            imgsz=args.imgsz or 640,
+        )
+    else:
+        print(f"unknown backend: {args.backend}", file=sys.stderr)
+        return 2
 
     cap = cv2.VideoCapture(str(source))
     if not cap.isOpened():
@@ -139,7 +153,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--source", default=str(DEFAULT_SOURCE), help="video path")
     p.add_argument("--model", default="yolo",
                    help="model alias (yolo, rtdetr, yolo11n, ...) or weights filename")
-    p.add_argument("--backend", default="pytorch", choices=["pytorch"], help="inference backend")
+    p.add_argument("--backend", default="pytorch", choices=["pytorch", "onnx"],
+                   help="inference backend")
+    p.add_argument("--provider", default="coreml", choices=["coreml", "cpu"],
+                   help="ONNX execution provider (only used when --backend=onnx)")
+    p.add_argument("--compute-units", default="ALL",
+                   choices=["CPUOnly", "CPUAndGPU", "CPUAndNeuralEngine", "ALL"],
+                   help="CoreML EP compute units (only used when --provider=coreml)")
     p.add_argument("--conf", type=float, default=0.25, help="confidence threshold")
     p.add_argument("--imgsz", type=int, default=None, help="inference image size")
     p.add_argument("--resize", type=int, default=None,

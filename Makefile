@@ -1,4 +1,4 @@
-.PHONY: setup fetch demo benchmark docker-build docker-run clean help
+.PHONY: setup fetch export-onnx demo validate benchmark docker-build docker-run clean help
 
 UV       ?= uv
 PLATFORM ?= linux/arm64
@@ -8,7 +8,9 @@ help:
 	@echo "Targets:"
 	@echo "  setup         Install deps via uv"
 	@echo "  fetch         Download the pinned traffic sample video"
+	@echo "  export-onnx   Export YOLO and RT-DETR weights to ONNX"
 	@echo "  demo          Run the live pipeline on the sample"
+	@echo "  validate      Phase 2 validation gate + CoreML EP compute-unit sweep"
 	@echo "  benchmark     Run the full model x backend matrix"
 	@echo "  docker-build  Build the linux/arm64 ONNX image"
 	@echo "  docker-run    Run the container with data/ and logs/ mounted"
@@ -20,8 +22,14 @@ setup:
 fetch:
 	$(UV) run python scripts/fetch_sample.py
 
+export-onnx:
+	$(UV) run python scripts/export_onnx.py
+
 demo:
 	$(UV) run python -m aegisvision.pipeline
+
+validate:
+	$(UV) run python scripts/phase2_validate.py
 
 benchmark:
 	$(UV) run python scripts/benchmark.py
