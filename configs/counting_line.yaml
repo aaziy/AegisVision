@@ -1,0 +1,11 @@
+# Counting-line configuration for the pinned 1920x1080 traffic sample.
+# Horizontal line across the middle of the road, spanning visible lanes.
+# Direction labels are arbitrary but conventional for this clip:
+#   in  = camera-side flow (moving toward viewer, prev_side > 0)
+#   out = away-flow (moving away from viewer)
+
+counting_line:
+  p1: [100, 600]
+  p2: [1820, 600]
+  in_label: in
+  out_label: out
