@@ -37,6 +37,7 @@ class CrossingEvent:
     direction: str
     point: tuple[float, float]
     frame: int
+    confidence: float
 
 
 class LineCrossingCounter:
@@ -86,6 +87,7 @@ class LineCrossingCounter:
                 direction=direction,
                 point=curr,
                 frame=self._frame_idx,
+                confidence=t.confidence,
             ))
             self.counts[t.class_name][direction] += 1
             self._counted.add(t.track_id)

@@ -1,4 +1,4 @@
-"""Live detection pipeline: capture → detect → track → count → render."""
+"""Live detection pipeline: capture → detect → track → count → render → log."""
 
 from __future__ import annotations
 
@@ -9,80 +9,19 @@ import time
 from pathlib import Path
 
 import cv2
-import numpy as np
 
 from aegisvision.counter import LineCrossingCounter, load_config
 from aegisvision.detectors.base import VEHICLE_CLASS_IDS
 from aegisvision.detectors.onnx import OnnxDetector
 from aegisvision.detectors.pytorch import PyTorchDetector
+from aegisvision.overlay import draw_box, draw_hud, draw_line
+from aegisvision.telemetry import EventLogger
 from aegisvision.tracker import ByteTracker
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE = REPO_ROOT / "data" / "samples" / "traffic_sample.mp4"
 DEFAULT_COUNTING_LINE = REPO_ROOT / "configs" / "counting_line.yaml"
-
-# BGR colors keyed by COCO class id.
-CLASS_COLORS: dict[int, tuple[int, int, int]] = {
-    1: (0, 255, 255),    # bicycle    - yellow
-    2: (0, 255, 0),      # car        - green
-    3: (0, 128, 255),    # motorcycle - orange
-    5: (255, 0, 255),    # bus        - magenta
-    7: (0, 165, 255),    # truck      - amber
-}
-DEFAULT_COLOR = (200, 200, 200)
-LINE_COLOR = (0, 200, 255)
-
-
-def _draw_box(frame: np.ndarray, d) -> None:
-    """Draw a bbox + label. Accepts a Detection or TrackedDetection (duck-typed)."""
-    color = CLASS_COLORS.get(d.class_id, DEFAULT_COLOR)
-    x1, y1, x2, y2 = int(d.x1), int(d.y1), int(d.x2), int(d.y2)
-    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-    label = (
-        f"#{d.track_id} {d.class_name} {d.confidence:.2f}"
-        if hasattr(d, "track_id")
-        else f"{d.class_name} {d.confidence:.2f}"
-    )
-    (tw, th), bl = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-    cv2.rectangle(frame, (x1, y1 - th - bl - 2), (x1 + tw, y1), color, -1)
-    cv2.putText(frame, label, (x1, y1 - bl), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                (0, 0, 0), 1, cv2.LINE_AA)
-
-
-def _draw_line(frame: np.ndarray, line) -> None:
-    p1 = (int(line.p1[0]), int(line.p1[1]))
-    p2 = (int(line.p2[0]), int(line.p2[1]))
-    cv2.line(frame, p1, p2, LINE_COLOR, 2, cv2.LINE_AA)
-
-
-def _outlined_text(
-    frame: np.ndarray, text: str, org: tuple[int, int],
-    scale: float = 0.7, color: tuple[int, int, int] = (0, 255, 0),
-) -> None:
-    cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale,
-                (0, 0, 0), 4, cv2.LINE_AA)
-    cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale,
-                color, 2, cv2.LINE_AA)
-
-
-def _draw_hud(
-    frame: np.ndarray, fps: float, label: str, counter: LineCrossingCounter | None,
-) -> None:
-    _outlined_text(frame, f"{label}  FPS: {fps:5.1f}", (12, 32), 0.9)
-    if counter is None:
-        return
-    totals = (
-        f"{counter.in_label}: {counter.total_in}  "
-        f"{counter.out_label}: {counter.total_out}  "
-        f"total: {counter.total}"
-    )
-    _outlined_text(frame, totals, (12, 64), 0.7)
-    if counter.counts:
-        parts = []
-        for cls in sorted(counter.counts.keys()):
-            d = counter.counts[cls]
-            parts.append(f"{cls}:{d[counter.in_label]}/{d[counter.out_label]}")
-        _outlined_text(frame, "  ".join(parts), (12, 92), 0.55, color=(220, 220, 0))
+DEFAULT_LOG = REPO_ROOT / "logs" / "events.jsonl"
 
 
 def run(args: argparse.Namespace) -> int:
@@ -127,6 +66,10 @@ def run(args: argparse.Namespace) -> int:
         line, in_label, out_label = load_config(args.counting_line)
         counter = LineCrossingCounter(line, in_label, out_label)
 
+    logger: EventLogger | None = None
+    if args.log:
+        logger = EventLogger(args.log_file)
+
     print(f"[source]    {source.name} {src_w}x{src_h} @ {src_fps:.2f} fps, {src_frames} frames")
     print(f"[detector]  {detector.name} on {detector.device} "
           f"(classes={'all' if classes is None else classes})")
@@ -136,10 +79,17 @@ def run(args: argparse.Namespace) -> int:
               f"({counter.in_label} / {counter.out_label})")
     else:
         print(f"[counter]   disabled")
+    print(f"[telemetry] {logger.path if logger else 'disabled'}")
     if args.resize:
         print(f"[resize]    {src_w}x{src_h} -> {target_w}x{target_h}")
     print(f"[mode]      {'measure (no display)' if args.measure else 'live (press q to quit)'}")
     print()
+
+    if logger:
+        logger.start(
+            source=str(source), model=detector.name, backend=args.backend,
+            device=detector.device, resolution=(target_w, target_h), fps=src_fps,
+        )
 
     window: str | None = None
     if not args.measure:
@@ -150,6 +100,8 @@ def run(args: argparse.Namespace) -> int:
     fps_window: collections.deque[float] = collections.deque(maxlen=30)
     frame_idx = 0
     t_start = time.perf_counter()
+    last_summary = t_start
+    summary_interval = max(0.5, float(args.summary_interval))
 
     try:
         while True:
@@ -162,19 +114,34 @@ def run(args: argparse.Namespace) -> int:
             t0 = time.perf_counter()
             detections = detector.detect(frame)
             tracks = tracker.update(detections) if tracker else []
-            if counter is not None:
-                counter.update(tracks)
+            crossings = counter.update(tracks) if counter is not None else []
             dt = time.perf_counter() - t0
             fps_window.append(1.0 / dt if dt > 0 else 0.0)
             rolling_fps = sum(fps_window) / len(fps_window)
 
+            if logger and crossings:
+                for ev in crossings:
+                    logger.line_cross(
+                        frame=ev.frame, track_id=ev.track_id,
+                        class_name=ev.class_name, direction=ev.direction,
+                        confidence=ev.confidence, point=ev.point,
+                    )
+
+            now = time.perf_counter()
+            if logger and counter is not None and now - last_summary >= summary_interval:
+                logger.summary(
+                    frame=frame_idx, fps=rolling_fps, counts=counter.counts,
+                    total_in=counter.total_in, total_out=counter.total_out,
+                )
+                last_summary = now
+
             if window is not None:
                 items = tracks if tracker else detections
                 for d in items:
-                    _draw_box(frame, d)
+                    draw_box(frame, d)
                 if counter is not None:
-                    _draw_line(frame, counter.line)
-                _draw_hud(frame, rolling_fps, detector.name, counter)
+                    draw_line(frame, counter.line)
+                draw_hud(frame, rolling_fps, detector.name, counter)
                 cv2.imshow(window, frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
@@ -194,8 +161,20 @@ def run(args: argparse.Namespace) -> int:
         if window is not None:
             cv2.destroyAllWindows()
 
-    elapsed = time.perf_counter() - t_start
-    avg_fps = frame_idx / elapsed if elapsed > 0 else 0.0
+        elapsed = time.perf_counter() - t_start
+        avg_fps = frame_idx / elapsed if elapsed > 0 else 0.0
+        if logger:
+            if counter is not None:
+                logger.end(
+                    frame=frame_idx, elapsed_s=elapsed, avg_fps=avg_fps,
+                    counts=counter.counts,
+                    total_in=counter.total_in, total_out=counter.total_out,
+                )
+            else:
+                logger.emit(event="end", frame=frame_idx,
+                            elapsed_s=round(elapsed, 2), avg_fps=round(avg_fps, 2))
+            logger.close()
+
     print()
     print(f"[summary] model={detector.name} backend={args.backend} device={detector.device} "
           f"resolution={target_w}x{target_h} frames={frame_idx} elapsed={elapsed:.2f}s "
@@ -235,6 +214,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="run line-crossing counter on tracks (default: on)")
     p.add_argument("--counting-line", default=str(DEFAULT_COUNTING_LINE),
                    help="path to counting-line YAML config")
+    p.add_argument("--log", action=argparse.BooleanOptionalAction, default=True,
+                   help="write JSONL event log (default: on)")
+    p.add_argument("--log-file", default=str(DEFAULT_LOG),
+                   help="path to JSONL event log")
+    p.add_argument("--summary-interval", type=float, default=5.0,
+                   help="seconds between summary events in the log (default: 5)")
     p.add_argument("--measure", action="store_true", help="benchmark mode: no display, full pass")
     p.add_argument("--max-frames", type=int, default=None, help="stop after N frames")
     args = p.parse_args(argv)

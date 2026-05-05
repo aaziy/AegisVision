@@ -1,4 +1,4 @@
-.PHONY: setup fetch export-onnx demo validate benchmark docker-build docker-run clean help
+.PHONY: setup fetch export-onnx demo validate benchmark replay docker-build docker-run clean help
 
 UV       ?= uv
 PLATFORM ?= linux/arm64
@@ -12,6 +12,7 @@ help:
 	@echo "  demo          Run the live pipeline on the sample"
 	@echo "  validate      Phase 2 validation gate + CoreML EP compute-unit sweep"
 	@echo "  benchmark     Run the full model x backend matrix"
+	@echo "  replay        Replay logs/events.jsonl into a count time-series"
 	@echo "  docker-build  Build the linux/arm64 ONNX image"
 	@echo "  docker-run    Run the container with data/ and logs/ mounted"
 	@echo "  clean         Remove venv and runtime artifacts"
@@ -33,6 +34,9 @@ validate:
 
 benchmark:
 	$(UV) run python scripts/benchmark.py
+
+replay:
+	$(UV) run python scripts/replay_log.py logs/events.jsonl --bucket 10
 
 docker-build:
 	docker buildx build --platform $(PLATFORM) -t $(IMAGE) --load .
