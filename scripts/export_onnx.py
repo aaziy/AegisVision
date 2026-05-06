@@ -43,6 +43,12 @@ def export_one(weights: str, model_cls: type, imgsz: int, simplify: bool, opset:
         out = (MODELS_DIR / Path(out_rel).name).resolve()
     finally:
         os.chdir(cwd)
+
+    # Auto-suffix non-default sizes: yolo26n.onnx for 640, yolo26n_960.onnx for 960.
+    if imgsz != 640:
+        suffixed = out.parent / f"{out.stem}_{imgsz}.onnx"
+        out.replace(suffixed)
+        out = suffixed
     return out
 
 
