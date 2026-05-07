@@ -97,6 +97,16 @@ def run(args: argparse.Namespace) -> int:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window, min(target_w, 1280), min(target_h, 720))
 
+    writer: cv2.VideoWriter | None = None
+    if args.output_video:
+        Path(args.output_video).parent.mkdir(parents=True, exist_ok=True)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(args.output_video, fourcc, src_fps, (target_w, target_h))
+        if not writer.isOpened():
+            print(f"failed to open output video: {args.output_video}", file=sys.stderr)
+            return 2
+        print(f"[output]    annotated mp4 -> {args.output_video}")
+
     fps_window: collections.deque[float] = collections.deque(maxlen=30)
     frame_idx = 0
     t_start = time.perf_counter()
@@ -135,17 +145,23 @@ def run(args: argparse.Namespace) -> int:
                 )
                 last_summary = now
 
-            if window is not None:
+            if window is not None or writer is not None:
                 items = tracks if tracker else detections
                 for d in items:
                     draw_box(frame, d)
                 if counter is not None:
                     draw_line(frame, counter.line)
                 draw_hud(frame, rolling_fps, detector.name, counter)
+
+            if window is not None:
                 cv2.imshow(window, frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
-            elif frame_idx % 60 == 0:
+
+            if writer is not None:
+                writer.write(frame)
+
+            if window is None and frame_idx % 60 == 0:
                 ext = (
                     f" tracks={len(tracks):2d} counts={counter.total_in}/{counter.total_out}"
                     if counter else (f" tracks={len(tracks):2d}" if tracker else "")
@@ -158,6 +174,8 @@ def run(args: argparse.Namespace) -> int:
                 break
     finally:
         cap.release()
+        if writer is not None:
+            writer.release()
         if window is not None:
             cv2.destroyAllWindows()
 
@@ -220,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="path to JSONL event log")
     p.add_argument("--summary-interval", type=float, default=5.0,
                    help="seconds between summary events in the log (default: 5)")
+    p.add_argument("--output-video", default=None,
+                   help="path to write annotated MP4 (works headless; for Docker)")
     p.add_argument("--measure", action="store_true", help="benchmark mode: no display, full pass")
     p.add_argument("--max-frames", type=int, default=None, help="stop after N frames")
     args = p.parse_args(argv)

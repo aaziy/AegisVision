@@ -1,0 +1,39 @@
+# Build context exclusions for `docker buildx build`.
+
+# Dev environment
+.venv/
+.python-version
+
+# Source control / CI
+.git/
+.gitignore
+.github/
+.dockerignore
+
+# Docs that aren't needed in the runtime image
+AegisVision.md
+
+# PyTorch weights — container is ONNX-only.
+models/*.pt
+
+# Sample videos — bind-mounted at runtime, never baked into the image.
+data/samples/*.mp4
+data/samples/*.avi
+data/samples/*.mov
+
+# Generated artifacts
+results/
+logs/
+output/
+
+# Python build cruft
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/

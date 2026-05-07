@@ -24,6 +24,7 @@ results/*.json
 results/*.jpg
 results/*.png
 results/*.mp4
+output/
 
 # OS / IDE
 .DS_Store

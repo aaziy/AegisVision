@@ -42,9 +42,10 @@ docker-build:
 	docker buildx build --platform $(PLATFORM) -t $(IMAGE) --load .
 
 docker-run:
+	@mkdir -p output
 	docker run --rm --platform $(PLATFORM) \
-	  -v $(PWD)/data:/app/data \
-	  -v $(PWD)/logs:/app/logs \
+	  -v $(PWD)/data:/app/data:ro \
+	  -v $(PWD)/output:/app/output \
 	  $(IMAGE)
 
 clean:
