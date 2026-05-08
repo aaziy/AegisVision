@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Union
+
 import cv2
 import numpy as np
 
 from .counter import LineCrossingCounter, LineSegment
+from .detectors.base import Detection
+from .tracker import TrackedDetection
+
+#: Any object with bbox fields + class_id; accepts Detection and TrackedDetection.
+AnyDetection = Union[Detection, TrackedDetection]
 
 # BGR colors keyed by COCO class id.
 CLASS_COLORS: dict[int, tuple[int, int, int]] = {
@@ -19,8 +26,8 @@ DEFAULT_COLOR: tuple[int, int, int] = (200, 200, 200)
 LINE_COLOR: tuple[int, int, int] = (0, 200, 255)
 
 
-def draw_box(frame: np.ndarray, d) -> None:
-    """Draw a bbox + label. Accepts a Detection or TrackedDetection (duck-typed)."""
+def draw_box(frame: np.ndarray, d: AnyDetection) -> None:
+    """Draw a bbox + label."""
     color = CLASS_COLORS.get(d.class_id, DEFAULT_COLOR)
     x1, y1, x2, y2 = int(d.x1), int(d.y1), int(d.x2), int(d.y2)
     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
