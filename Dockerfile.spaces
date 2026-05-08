@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.7
+#
+# AegisVision — Hugging Face Spaces deployment.
+#
+# Differences from Dockerfile (edge container):
+#   - amd64 (HF free tier) instead of linux/arm64
+#   - Gradio frontend on port 7860 instead of headless pipeline
+#   - Downloads the pinned sample video at build time via yt-dlp
+#   - Only yolo26n.onnx is shipped (rtdetr is too slow for CPU EP on HF)
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# OpenCV runtime libs.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Layer 1: install Python deps (cached until pyproject.toml / uv.lock change).
+COPY pyproject.toml uv.lock README.md ./
+COPY src ./src
+RUN uv sync --frozen
+
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Layer 2: source code, configs, ONNX model, Gradio app.
+COPY scripts ./scripts
+COPY configs ./configs
+COPY models/yolo26n.onnx ./models/
+COPY app.py ./
+
+# Layer 3: fetch the pinned sample video at build time.
+# Having it baked in means the "Use bundled sample" checkbox works immediately.
+RUN mkdir -p /app/data/samples /app/output /app/logs && \
+    python scripts/fetch_sample.py
+
+EXPOSE 7860
+
+CMD ["python", "app.py"]

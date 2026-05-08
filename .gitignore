@@ -26,6 +26,10 @@ results/*.png
 results/*.mp4
 output/
 
+# Gradio cache (created at runtime)
+gradio_cached_examples/
+.gradio/
+
 # OS / IDE
 .DS_Store
 .vscode/
